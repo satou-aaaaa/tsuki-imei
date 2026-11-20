@@ -8,6 +8,7 @@ import { createRequire } from "node:module";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { checkTransfer } from "./transfer-check.mjs";
 import { checkSwStall } from "./sw-check.mjs";
 import { checkDepth } from "./depth-check.mjs";
@@ -40,18 +41,18 @@ const OUT_NAMES = /梅見月|花見月|建子月|初春月|小草生月|桜月|�
       const P = G.make(`${k.id}|qa${s}`), why = [], n2 = f === "y" ? 4 : k.lv === 0 ? 3 : 4;
       if (P.m !== mo) why.push("月がちがう");
       if (P.s2.opts.length !== n2 || new Set(P.s2.opts).size !== n2 || !P.s2.opts.includes(P.s2.ans)) why.push(`2段目の選び肢が${n2}つでない・答えを含まない`);
-      if ([P.q, P.media, P.big, P.s2.q, ...P.s2.opts, ...P.cands, ...P.opts].some((v) => typeof v !== "string" || !v || /undefined|NaN|null|\$\{|＠/.test(v))) why.push("中身が空");
+      if ([P.q, P.media, P.big, P.s2.q, ...P.s2.opts, ...P.cands, ...(P.opts || [])].some((v) => typeof v !== "string" || !v || /undefined|NaN|null|\$\{|＠/.test(v))) why.push("中身が空");
       if (f === "y") { if (P.s2.ans !== `${mo}月` || P.s2.opts.some((o) => !/^(?:[1-9]|1[0-2])月$/.test(o))) why.push("2段目（何月）がちがう"); }
       else if (P.s2.ans !== G.MONTHS[mo - 1].yu || P.s2.opts.some((o) => !G.MONTHS.some((y) => y.yu === o))) why.push("2段目（由来）が資料の月とちがう");
       if (f === "m") {
         if (P.type !== "num" || P.ans !== `${mo}月` || P.opts.length !== 12 || P.opts.some((o, i) => o !== `${i + 1}月`)) why.push("月の数の選び肢が12でない・答えがちがう");
         if (!P.q.includes(`「${x[0]}」`) || P.q.includes(`${mo}月`)) why.push("問いに名前が無い・答えの月が書いてある");
       } else {
-        if (P.type !== "in" || P.opts.length || P.cands.length !== 4 || new Set(P.cands).size !== 4) why.push("書いて答える形でない・候補が4つでない");
+        if (P.type !== "in" || P.opts !== undefined || P.cands.length !== 4 || new Set(P.cands).size !== 4) why.push("書いて答える形でない・候補が4つでない");
         if (f === "r") { if (P.ans !== x[1][0] || !P.q.includes(`「${x[0]}」`) || x[1].some((y) => P.q.includes(y)) || !P.cands.includes(x[1][0])) why.push("読みの問題がちがう"); }
         else {
           if (!NAME_RE.test(P.ans) || P.ans !== x[0] || !P.cands.includes(x[0]) || !P.cands.every((c) => NAME_RE.test(c))) why.push("答え・候補が資料の名前でない");
-          if (P.q.includes(x[0]) || x[1].some((y) => P.q.includes(y))) why.push("問いに答えが書いてある");
+          if (P.q.includes(x[0]) || x[1].some((y) => P.q.includes(y)) || x[2].some((a) => P.q.includes(a))) why.push("問いに答え（別の書き方も）が書いてある");
           if (f === "n" && !P.q.includes(`${mo}月`)) why.push("問いに月の数が無い");
           if (f === "y" && !/由来|説/.test(P.q)) why.push("由来の問いでない");
         }
@@ -85,6 +86,13 @@ const OUT_NAMES = /梅見月|花見月|建子月|初春月|小草生月|桜月|�
     if (G.judge(r, x[0]).ok || !G.judge(r, x[0]).kanji) jb.push(`${x[0]} 読みの問題に漢字`);
   }
   check("書いた答え：漢字・空白のゆれ・別の書き方（衣更着・早月）・かな（ひらがな・カタカナ）は正解、かなは「漢字では」の印、ほかの月の名前はその月を返す、読みの問題に漢字はまちがいに数えない", jb.length === 0, jb.slice(0, 6).join(","));
+  // ヒントは、読みが2つある月でもどちらの読みにも当てはまる（文月：ふみづき・ふづき。tsuki-imei #1 の CodeRabbit）
+  const hb = [];
+  for (const k of G.KINDS.filter((k) => /^[nr]/.test(k.id))) { const ys = NDL[k.m - 1][1], t = k.look + k.key; const n = t.match(/(\d+)文字(?!目)/), p2 = t.match(/はじめの2文字は「(.+?)」/), p1 = t.match(/「(.)」で始ま/), su = t.match(/終わりは「(.+?)」/);
+    if (n && !ys.every((y) => [...y].length === +n[1])) hb.push(k.id + " 文字数"); if (p2 && !ys.every((y) => y.startsWith(p2[1]))) hb.push(k.id + " はじめ2"); if (p1 && !ys.every((y) => y.startsWith(p1[1]))) hb.push(k.id + " はじめ"); if (su && !ys.every((y) => y.endsWith(su[1]))) hb.push(k.id + " 終わり"); }
+  check("読みのヒント（文字数・はじめ・終わり）は、資料の読みのどれにも当てはまる", hb.length === 0, hb.join(","));
+  check("書いた答え：空白をはさんだ半角の濁点（ﾐﾅﾂ ﾞｷ）も NFC でつけ直して正解", G.judge(G.make("n6|h"), "ﾐﾅﾂ ﾞｷ").ok && G.judge(G.make("r6|h"), "ﾐﾅﾂ ﾞｷ").ok);
+  check("まちがいの印（wkey）：同じ月の名前と読みは同じ印・引き継ぎが受けない字（<>\"'`）を入れない・20字まで・正解は印にしない", G.wkey(G.make("n2|w"), "睦月") === G.wkey(G.make("n2|w"), "ムツキ") && !/[<>"'`]/.test(G.wkey(G.make("n2|w"), '<b>"x\'`')) && G.wkey(G.make("n2|w"), "あ".repeat(40)).length === 20 && G.wkey(G.make("n2|w"), "如月") === "" && G.wkey(G.make("r2|w"), "如月") === "");
   check("書いた答え：半角カタカナ・全角英数も NFKC でそろえる", G.judge(G.make("n1|h"), "ﾑﾂｷ").ok && G.norm("ＡＢ　ｃ") === "ABc" && G.judge(G.make("r12|h"), "シワス").ok);
   const longWhy = [], longLook = [], longOpt = [];
   for (const k of G.KINDS) { if ([...k.why].length > 120) longWhy.push(k.id); if ([...k.look].length > 45 || [...k.key].length > 60) longLook.push(k.id); for (let s = 0; s < 200; s++) { const P = G.make(`${k.id}|len${s}`); for (const o of [P.q]) if ([...o].length > 60) longOpt.push(`${k.id}:${o}`); for (const o of P.s2.opts) if ([...o].length > 30) longOpt.push(`${k.id}:${o}`); } }
@@ -111,6 +119,9 @@ const OUT_NAMES = /梅見月|花見月|建子月|初春月|小草生月|桜月|�
   // 過去の日の問題が変わらない（data.js を直したときの見張り。値は 2026-11-20 に作ったもの）
   const snap = ["2026-11-21", "2026-11-22", "2027-01-01"].map((d) => [...G.dailyTags(d), ...G.hardTags(d)].map((t) => { const P = G.make(t); return `${P.kind}:${P.v}`; }).join(",")).join(";");
   check("過去の日（2026-11-21・11-22・2027-01-01）の5問と上級3問が作ったときのまま（種類・言い方を足す・並べ替える・消すと変わる）", snap === PINS, snap);
+  // 印（種類・言い方の番号・選び肢の番号）が同じでも、問いの文や2段目の並びが変わったら落とす（言い回しの入れ替え。tsuki-imei #1 の CodeRabbit）
+  const full = ["2026-11-21", "2026-11-22", "2027-01-01"].map((d) => [...G.dailyTags(d), ...G.hardTags(d)].map((t) => { const P = G.make(t); return `${P.kind}:${P.v}:${P.q}:${P.s2.opts.join("/")}`; }).join(",")).join(";");
+  check("過去の日の問いの文と2段目の選び肢の並びも作ったときのまま（ハッシュ 704cee44158d73e3）", createHash("sha256").update(full).digest("hex").slice(0, 16) === "704cee44158d73e3", createHash("sha256").update(full).digest("hex").slice(0, 16));
 }
 
 // ---- 2. ファイルの中身 ----
@@ -309,7 +320,8 @@ try {
     await q.reload(); await q.waitForTimeout(250);
     const st = await q.evaluate(() => __nm.load());
     check("記録の形を直す：数の所の文字は0に・形のちがう途中経過と日ごとの記録は捨てる", st.ebest === 0 && st.dex.e === 0 && st.runs.e && !("h" in st.runs) && !("p" in st.runs) && !("d" in st.runs) && !("a:2026-11-06" in st.runs) && !("a:2026-11-05" in st.runs) && st.runs["a:2026-11-04"] && st.runs["a:2026-11-04"].cur === null && Object.keys(st.days).length === 0);
-    await q.click("#go-e").catch(() => {}); await q.waitForTimeout(150);
+    await q.click("#go-e"); await q.waitForTimeout(150);
+    check("形を直した記録で、とことんの続きの画面が開く", await q.locator("#card").count() === 1);
     {
       // 知らない mode や、置き場とちがう mode の途中経過は捨てる（ホームが出なくなるのを防ぐ。2026-11-07 CodeRabbit）
       const z = await newPage(); await closeHow(z);
@@ -436,8 +448,10 @@ try {
     const q = await newPage(); await closeHow(q);
     await q.evaluate((tags) => { __nm.save((s) => { s.runs.p = { mode: "p", date: __nm.todayKey(), list: tags, res: [], cur: null, id: "in1" }; }); __nm.play("p"); }, ["n6|i1", "n2|i2", "n1|i3", "r6|i4", "y12|i5"]);
     check("書く問題：欄と「こたえる」がある・候補ははじめは出ない・欄は高さ44px以上", await q.locator("#in").count() === 1 && await q.locator("#go").count() === 1 && await q.locator("#cands:not([hidden])").count() === 0 && Math.round(await q.$eval("#in", (e) => e.getBoundingClientRect().height)) >= 44);
+    await q.fill("#in", "水無月");
     const ime = await q.evaluate(() => { const i = document.getElementById("in"); const mk = (o) => { const e = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true, ...o }); i.dispatchEvent(e); return e.defaultPrevented; }; const e229 = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }); Object.defineProperty(e229, "keyCode", { get: () => 229 }); i.dispatchEvent(e229); return [mk({ isComposing: true }), e229.defaultPrevented, mk({})]; });
-    check("変換中の Enter（isComposing・keyCode 229）では送らず、ふつうの Enter は送れる", JSON.stringify(ime) === "[true,true,false]", JSON.stringify(ime));
+    await q.waitForTimeout(50);
+    check("変換中の Enter（isComposing・keyCode 229）では送らず（答えを書いてあっても段もまちがいも変わらない）、ふつうの Enter は送れる", JSON.stringify(ime) === "[true,true,false]" && await q.evaluate(() => __nm.cur().step === 1 && __nm.cur().wrong.length === 0) && await q.locator(".why button").count() === 0, JSON.stringify(ime));
     await q.fill("#in", " ミナ　ツキ "); await q.press("#in", "Enter"); await q.waitForTimeout(80);
     check("かな（カタカナ・空白入り）で名前を書くと正解・「漢字では「水無月」」と見せる・まちがいに数えない", await q.locator(".why button").count() === 4 && (await q.textContent("#msg")).includes("漢字では「水無月」") && await q.evaluate(() => __nm.cur().wrong.length) === 0);
     await why(q); await q.waitForSelector(".verdict");
@@ -448,12 +462,15 @@ try {
     await q.fill("#in", "睦月"); await q.click("#go");
     check("ほかの月の名前を書くと ✕ と「旧暦1月の名前です」・まちがい1", await q.evaluate(() => __nm.cur().wrong.length) === 1 && (await q.textContent("#msg")).includes("旧暦1月の名前") && (await q.textContent("#msg")).includes("✕"));
     await q.fill("#in", "むつき"); await q.click("#go");
-    check("同じまちがい（読みでも同じ月）をもう一度書いても2回目は数えない", await q.evaluate(() => __nm.cur().wrong.length) <= 2);
+    check("同じ月の名前と読み（睦月・むつき）は1つのまちがいに数える", await q.evaluate(() => __nm.cur().wrong.length) === 1 && (await q.textContent("#msg")).includes("同じ"));
     const w0 = await q.evaluate(() => __nm.cur().wrong.slice());
     await q.fill("#in", "睦月"); await q.click("#go");
     check("まったく同じ答えをもう一度書いても数えない", JSON.stringify(await q.evaluate(() => __nm.cur().wrong)) === JSON.stringify(w0) && (await q.textContent("#msg")).includes("同じ"));
     await q.reload(); await q.waitForTimeout(150); await q.evaluate(() => __nm.play("p"));
     check("書いたまちがいは、閉じて開き直しても残る", JSON.stringify(await q.evaluate(() => __nm.cur().wrong)) === JSON.stringify(w0));
+    await q.fill("#in", "<b>＜"); await q.click("#go");
+    check("書いたまちがいに < などがあっても、記録には引き継ぎが受けない字を残さない", await q.evaluate(() => __nm.cur().wrong.length) === 2 && (await q.evaluate(() => __nm.load().runs.p.cur.wrong)).every((w) => !/[<>"'`]/.test(w)), JSON.stringify(await q.evaluate(() => __nm.load().runs.p.cur.wrong)));
+    w0.length = 0; w0.push(...await q.evaluate(() => __nm.cur().wrong));
     await q.fill("#in", "衣 更 着"); await q.click("#go"); await q.waitForTimeout(50);
     check("別の書き方（衣更着）も正解・「とも書きます」と見せる", await q.locator(".why button").count() === 4 && (await q.textContent("#msg")).includes("とも書きます"));
     await why(q); await q.waitForSelector(".verdict"); await q.click("#next");
@@ -540,7 +557,8 @@ try {
     await solve(q); await q.click("#next"); await q.waitForTimeout(150);
     const after = await mem(q), dp2 = await q.evaluate(() => JSON.parse(localStorage.getItem("tmei-depth")));
     check("復習を終えると結果は「復習」・今日の記録は増えない・シェアは出ない", (await q.textContent("h1")).includes("復習") && JSON.stringify(after.days) === JSON.stringify(before.days) && await q.locator("#share").count() === 0);
-    check("復習で一度で正解すると、次は3日後へ進む", Object.values(dp2.rv).every((x) => x.s === 1 && x.due > TODAY));
+    { const d3 = await q.evaluate(() => new Date(Date.parse(__nm.todayKey()) + 3 * 864e5).toISOString().slice(0, 10)), e = dp2.rv && dp2.rv["n4|dp1"];
+      check("復習で一度で正解すると、同じ問題が残り、次はちょうど3日後へ進む", !!e && e.s === 1 && e.due === d3, JSON.stringify(e) + " " + d3); }
     await q.goto(url); await q.waitForTimeout(150);
     check("復習を終えたら、ホームの「復習」は消える", await q.locator("#go-r").count() === 0);
     await q.evaluate(() => { const d = JSON.parse(localStorage.getItem("tmei-depth")); d.rv["nai|1"] = { s: 0, due: "2026-01-01", t: 1 }; d.rv["constructor|x"] = { s: 0, due: "2026-01-01", t: 2 }; localStorage.setItem("tmei-depth", JSON.stringify(d)); });

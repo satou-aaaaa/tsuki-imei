@@ -735,7 +735,7 @@ function keep() { let ok = false; const st0 = cur.step; save((s) => { const r = 
 const missOf = () => cur.wrong.length + cur.hints + cur.w2.length; // 2段目（由来）のまちがいも数える
 const isIn = () => cur.P.type === "in"; // 書いて答える問題（名前・読み）。月の数はボタンから選ぶ
 // 書いたまちがいとして残してよいもの（文字で20字まで・その問題の正解でない）
-const okWrong = (P, w) => (P.type === "in" ? typeof w === "string" && w.length > 0 && w.length <= 20 && !G.judge(P, w).ok : P.opts.includes(w) && w !== P.ans);
+const okWrong = (P, w) => (P.type === "in" ? typeof w === "string" && w.length > 0 && w.length <= 20 && !/[<>"'`]/.test(w) && !G.judge(P, w).ok : P.opts.includes(w) && w !== P.ans); // 書いたまちがいは G.wkey の印（保存するときと同じ決まり）
 function play() {
   const s = load(), run = s.runs[MODE];
   if (!run) return home();
@@ -744,6 +744,7 @@ function play() {
   if (i >= run.list.length) return finish();
   if (run.mode === "a" && s.days[run.date]) { save((s2) => { s2.runs[MODE] = null; }); toast("この日は別の画面で遊び終えています"); return home(); }
   const tag = run.list[i], P = G.make(tag), hard = run.mode === "h";
+  if (!P.opts) P.opts = []; // 書いて答える問題は選び肢が無い（画面の中では空の並びとして扱う）
   const saved = run.cur && run.cur.i === i && run.cur.tag === tag ? run.cur : { wrong: [], hints: 0 };
   cur = { i, date: run.date, id: run.id, tag, P, wrong: (saved.wrong || []).filter((w) => okWrong(P, w)), hints: saved.hints || 0, step: saved.step === 2 ? 2 : 1, w2: (saved.w2 || []).filter((x) => x !== P.s2.ans && P.s2.opts.includes(x)), jd: saved.jd || null, h2: saved.step === 2 && saved.h2 ? 1 : 0, done: false };
   const label = run.mode === "d" ? LV[P.lv] : run.mode === "a" ? `あとから・${LV[P.lv]}` : hard ? "上級" : run.mode === "r" ? `復習・${LV[P.lv]}` : run.mode === "e" ? `とことん・${LV[P.lv]}` : `練習・${LV[P.lv]}`;
@@ -797,14 +798,18 @@ function paint() {
     const cb = $("cands"), on = cur.hints >= 2 && !off;
     cb.hidden = !on;
     if (on) {
-      cb.innerHTML = cur.P.cands.map((w) => { const no = cur.wrong.includes(G.norm(w)); return `<button type="button" class="cand${no ? " ng" : ""}" data-w="${esc(w)}"${no ? " disabled" : ""} aria-label="${esc(w)}${no ? "（ちがう）" : ""}">${esc(w)}</button>`; }).join("");
+      cb.innerHTML = cur.P.cands.map((w) => { const no = cur.wrong.includes(G.wkey(cur.P, w)); return `<button type="button" class="cand${no ? " ng" : ""}" data-w="${esc(w)}"${no ? " disabled" : ""} aria-label="${esc(w)}${no ? "（ちがう）" : ""}">${esc(w)}</button>`; }).join("");
       cb.querySelectorAll("button").forEach((b) => (b.onclick = () => answer(b.dataset.w, true)));
     }
   }
   const h = $("hint"); if (h) h.disabled = cur.done || cur.hints >= 2;
   $("hintbox").innerHTML = cur.hints && !cur.done ? `<div class="hint" role="status">💡 ${esc(cur.P.look)}${cur.hints >= 2 ? `<br>💡 ${esc(cur.P.key)}` : ""}</div>` : "";
 }
-function hint() { if (cur.done || cur.hints >= 2) return; if (cur.step === 2) { if (cur.h2 || !left2Of().length) return; cur.h2 = 1; cur.hints++; keep(); return paintWhy(); } cur.hints++; keep(); paint(); }
+function hint() {
+  if (cur.done || cur.hints >= 2) return;
+  // 別のタブでこの問題の2段目へ進んでいたら、ヒントは数えずに2段目へそろえるだけ（使っていない1段目のヒントで★を減らさない。tsuki-imei #1 の CodeRabbit）
+  if (cur.step !== 2) { const r = load().runs[MODE]; if (same(r) && r.cur && r.cur.i === cur.i && r.cur.tag === cur.tag && r.cur.step === 2) return keep(); }
+  if (cur.step === 2) { if (cur.h2 || !left2Of().length) return; cur.h2 = 1; cur.hints++; keep(); return paintWhy(); } cur.hints++; keep(); paint(); }
 // 2段目：正解したら「名前の由来（よく言われる説）は？」（由来から書いた問題は「旧暦の何月？」）を選ぶ（game-dev.md「1問を深くする」）
 // 2段目のヒント：ちがう選び肢を1つ消す（消すのは決まった1つ。まちがいの数で変えない）
 const left2Of = () => cur.P.s2.opts.filter((x) => x !== cur.P.s2.ans && !cur.w2.includes(x));
@@ -860,10 +865,11 @@ function answer(v, picked) {
   if (r.kanji) { $("msg").className = "msg"; $("msg").textContent = `読みをひらがなで書いてください（「${cur.P.big}」の読み方）`; $("in").value = ""; return; } // 名前をそのまま書いたのはまちがいに数えない
   if (!r.ok) {
     $("in").value = "";
-    if (cur.wrong.includes(r.s)) { $("msg").className = "msg bad"; $("msg").textContent = "✕ さっきと同じ答えです。ヒントも使えます。"; return; }
+    const wk = G.wkey(cur.P, v); // 同じ月の名前と読みは1つの印（引き継ぎコードが受けない字は除く）
+    if (cur.wrong.includes(wk)) { $("msg").className = "msg bad"; $("msg").textContent = "✕ さっきと同じ答えです。ヒントも使えます。"; return; }
     buzz(40);
     const jd = Depth.judge(false); if (jd && jd.sure) { cur.jd = jd; sureCount(false); }
-    cur.wrong.push(r.s); keep(); paint();
+    cur.wrong.push(wk); keep(); paint();
     $("msg").className = "msg bad"; $("msg").textContent = `✕ ちがいます。${r.other ? `それは旧暦${r.other}月の${cur.P.ask === "kana" ? "名前の読み" : "名前"}です。` : "もう一度どうぞ。"}` + (jd && jd.text ? "　" + jd.text : "");
     return;
   }
@@ -878,9 +884,10 @@ function right() {
 function solved() {
   cur.done = true; buzz([10, 40, 10]);
   const P = cur.P, x = G.MONTHS[P.m - 1];
-  const s = save((s) => { const r = s.runs[MODE]; if (!same(r)) return; const was = r.cur && r.cur.i === cur.i && r.cur.tag === cur.tag ? r.cur : null; if (was) { cur.hints = Math.max(cur.hints, was.hints || 0); for (const w of was.wrong || []) if (!cur.wrong.includes(w)) cur.wrong.push(w); for (const w of was.w2 || []) if (P.s2.opts.includes(w) && !cur.w2.includes(w)) cur.w2.push(w); } r.res.push({ m: missOf() }); r.cur = null; s.dex[P.kind] = (s.dex[P.kind] || 0) + 1; }); // 別のタブで使ったヒント・まちがいも合わせてから数える
+  let rec = false;
+  const s = save((s) => { const r = s.runs[MODE]; if (!same(r)) return; rec = true; const was = r.cur && r.cur.i === cur.i && r.cur.tag === cur.tag ? r.cur : null; if (was) { cur.hints = Math.max(cur.hints, was.hints || 0); for (const w of was.wrong || []) if (!cur.wrong.includes(w)) cur.wrong.push(w); for (const w of was.w2 || []) if (P.s2.opts.includes(w) && !cur.w2.includes(w)) cur.w2.push(w); } r.res.push({ m: missOf() }); r.cur = null; s.dex[P.kind] = (s.dex[P.kind] || 0) + 1; }); // 別のタブで使ったヒント・まちがいも合わせてから数える
   const m = missOf(), st = starsOf(m);
-  Depth.mark(cur.tag, m, P.name); // まちがい・ヒントがあれば復習へ、復習中なら次の間へ
+  if (rec) Depth.mark(cur.tag, m, P.name); // まちがい・ヒントがあれば復習へ、復習中なら次の間へ（別のタブで先に解き終えていたら、この画面の分では動かさない。tsuki-imei #1 の CodeRabbit）
   const r = s.runs[MODE], fin = r && r.mode !== "e" && r.res.length >= r.list.length;
   document.querySelectorAll(".ch").forEach((b) => { b.disabled = true; if (P.opts[+b.dataset.j] === P.ans) { b.classList.remove("ng"); b.classList.add("ok"); b.setAttribute("aria-label", P.ans + "（正解）"); } });
   document.querySelectorAll(".why button").forEach((b) => (b.disabled = true));

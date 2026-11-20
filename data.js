@@ -18,10 +18,10 @@
   // 12か月。k：名前・alt：資料にある別の書き方・yomi：資料にある読み（全部正解）・yu：2段目の由来の選び肢・ys：由来の言い方（問いに使う）・src：資料の説明を短くしたもの
   const MONTHS = [
     { m: 1, k: "睦月", alt: [], yomi: ["むつき"], yu: "親類が集まって親しくする（睦び）月", ys: ["正月に親類一同が集まる、睦び（親しくする）の月", "親類が集まって親しくする（睦び）月"], src: "正月に親類一同が集まる、睦び（親しくする）の月" },
-    { m: 2, k: "如月", alt: ["衣更着"], yomi: ["きさらぎ"], yu: "寒さが残り、衣を更に重ね着する月", ys: ["まだ寒さが残っていて、衣を重ね着する（更に着る）月", "「衣更着」とも書く、衣を重ね着する月"], src: "「衣更着」とも書き、まだ寒さが残っていて衣を重ね着する（更に着る）月" },
+    { m: 2, k: "如月", alt: ["衣更着"], yomi: ["きさらぎ"], yu: "寒さが残り、衣を更に重ね着する月", ys: ["まだ寒さが残っていて、衣を重ね着する（更に着る）月", "寒さが残り、衣を重ね着する月"], src: "「衣更着」とも書き、まだ寒さが残っていて衣を重ね着する（更に着る）月" },
     { m: 3, k: "弥生", alt: [], yomi: ["やよい"], yu: "草木が生い茂る（木草弥生い茂る）月", ys: ["草木が生い茂る（きくさいやおいしげる）月", "草木が生い茂る月"], src: "木草弥生い茂る（草木が生い茂る）月" },
     { m: 4, k: "卯月", alt: [], yomi: ["うづき"], yu: "卯の花の月", ys: ["卯の花の月", "卯の花にちなむ月"], src: "卯の花の月" },
-    { m: 5, k: "皐月", alt: ["早月"], yomi: ["さつき"], yu: "早苗（さなえ）を植える月", ys: ["早苗（さなえ）を植える月", "「早月」とも書く、早苗を植える月"], src: "「早月」とも書き、早苗（さなえ）を植える月" },
+    { m: 5, k: "皐月", alt: ["早月"], yomi: ["さつき"], yu: "早苗（さなえ）を植える月", ys: ["早苗（さなえ）を植える月", "早苗を植える月"], src: "「早月」とも書き、早苗（さなえ）を植える月" },
     { m: 6, k: "水無月", alt: [], yomi: ["みなづき", "みなつき"], yu: "田に水を引く「水の月」", ys: ["水の月（「無」は「の」の意味）で、田に水を引く月", "田に水を引く月"], src: "水の月（「無」は「の」を意味する）で、田に水を引く月" },
     { m: 7, k: "文月", alt: [], yomi: ["ふみづき", "ふづき"], yu: "稲の穂が実る月（穂含月）", ys: ["稲の穂が実る月（穂含月）", "稲の穂が実る月"], src: "稲の穂が実る月（穂含月：ほふみづき）" },
     { m: 8, k: "葉月", alt: [], yomi: ["はづき", "はつき"], yu: "木々の葉が落ちる月（葉落ち月）", ys: ["木々の葉落ち月", "木々の葉が落ちる月"], src: "木々の葉落ち月（はおちづき）" },
@@ -38,7 +38,8 @@
 
   // ---- 答えのゆれ（全角半角・空白・カタカナ・かぎかっこ）をそろえる ----
   const kata2hira = (s) => s.replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60));
-  function norm(v) { return kata2hira(String(v == null ? "" : v).normalize("NFKC").replace(/[\s　「」『』"'“”（）()。、.,]/g, "")); }
+  // 空白を除いたあとに NFC で濁点をつけ直す（「ﾂ ﾞ」のように空白をはさんでも「づ」になる。tsuki-imei #1 の CodeRabbit）
+  function norm(v) { return kata2hira(String(v == null ? "" : v).normalize("NFKC").replace(/[\s　「」『』"'“”（）()。、.,]/g, "")).normalize("NFC"); }
   const MEDIA = { n: "月の名前", m: "何月？", r: "名前の読み", y: "名前の由来" };
   const PRE = (x) => MONTHS[(x.m + 10) % 12], NXT = (x) => MONTHS[x.m % 12];
 
@@ -62,20 +63,25 @@
   const QY = [(y) => `由来は「${y}」とよく言われる。この月の名前は？`, (y) => `「${y}」という説で知られる月の名前は？`, (y) => `よく言われる由来は「${y}」。何という月？`];
 
   const yomiStr = (x) => x.yomi.join("・");
+  // 読みのヒントは、資料の読みが2つある月（文月：ふみづき・ふづき など）でもどちらにも当てはまる形にする（tsuki-imei #1 の CodeRabbit）
+  const pre = (x) => { let p = [...x.yomi[0]]; for (const y of x.yomi) { const c = [...y]; let i = 0; while (i < p.length && p[i] === c[i]) i++; p = p.slice(0, i); } return p.join(""); };
+  const suf = (x) => { let p = [...x.yomi[0]].reverse(); for (const y of x.yomi) { const c = [...y].reverse(); let i = 0; while (i < p.length && p[i] === c[i]) i++; p = p.slice(0, i); } return p.reverse().join(""); };
+  const lenOf = (x) => (x.yomi.every((y) => [...y].length === [...x.yomi[0]].length) ? [...x.yomi[0]].length : 0);
+  const two = (x) => (x.yomi.length > 1 ? `（読みは${x.yomi.length}つあります）` : "");
   const whyOf = (x) => `旧暦${x.m}月は「${x.k}」（${yomiStr(x)}）。よく言われる由来：${x.src}。`;
 
   // n：月の数 → 名前を書く（ふつう）
-  const N = (x) => ({ id: `n${x.m}`, lv: 1, m: x.m, ans: x.k, name: `${x.m}月の名前：${x.k}`, look: `読みは「${x.yomi[0][0]}」で始まる${[...x.yomi[0]].length}文字です。`, key: `1文字目は「${[...x.k][0]}」です。下の4つから選んでもかまいません。`, why: whyOf(x),
-    make: (R, lv) => { const qi = ri(R, 0, QN.length - 1), s2 = s2yu(R, x, lv), c = cands(R, x, (y) => y.k); return { type: "in", ask: "kanji", q: QN[qi](x), big: `旧暦 ${x.m}月`, opts: [], ans: x.k, s2, cands: c, v: `${qi}:${s2.v}` }; } });
+  const N = (x) => ({ id: `n${x.m}`, lv: 1, m: x.m, ans: x.k, name: `${x.m}月の名前：${x.k}`, look: lenOf(x) ? `読みは「${x.yomi[0][0]}」で始まる${lenOf(x)}文字です。` : `読みは「${x.yomi[0][0]}」で始まります${two(x)}。`, key: `1文字目は「${[...x.k][0]}」です。下の4つから選んでもかまいません。`, why: whyOf(x),
+    make: (R, lv) => { const qi = ri(R, 0, QN.length - 1), s2 = s2yu(R, x, lv), c = cands(R, x, (y) => y.k); return { type: "in", ask: "kanji", q: QN[qi](x), big: `旧暦 ${x.m}月`, ans: x.k, s2, cands: c, v: `${qi}:${s2.v}` }; } });
   // m：名前 → 何月かを12のボタンから選ぶ（やさしい）
   const M = (x) => ({ id: `m${x.m}`, lv: 0, m: x.m, ans: `${x.m}月`, name: `${x.k}は何月：${x.m}月`, look: `前の月は「${PRE(x).k}」、次の月は「${NXT(x).k}」です。`, key: `読みは「${yomiStr(x)}」。12の中から2つにしぼりました。`, why: whyOf(x),
     make: (R, lv) => { const qi = ri(R, 0, QM.length - 1), s2 = s2yu(R, x, lv); return { type: "num", ask: "month", q: QM[qi](x), big: x.k, opts: MO.slice(), ans: `${x.m}月`, s2, cands: [], v: `${qi}:${s2.v}` }; } });
   // r：名前 → 読みを書く（ふつう）
-  const Rd = (x) => ({ id: `r${x.m}`, lv: 1, m: x.m, ans: x.yomi[0], name: `${x.k}の読み：${yomiStr(x)}`, look: `${[...x.yomi[0]].length}文字で、「${x.yomi[0][0]}」で始まります。`, key: `はじめの2文字は「${[...x.yomi[0]].slice(0, 2).join("")}」です。下の4つから選んでもかまいません。`, why: whyOf(x),
-    make: (R, lv) => { const qi = ri(R, 0, QR.length - 1), s2 = s2yu(R, x, lv), c = cands(R, x, (y) => y.yomi[0]); return { type: "in", ask: "kana", q: QR[qi](x), big: x.k, opts: [], ans: x.yomi[0], s2, cands: c, v: `${qi}:${s2.v}` }; } });
+  const Rd = (x) => ({ id: `r${x.m}`, lv: 1, m: x.m, ans: x.yomi[0], name: `${x.k}の読み：${yomiStr(x)}`, look: lenOf(x) ? `${lenOf(x)}文字で、「${x.yomi[0][0]}」で始まります。` : `「${x.yomi[0][0]}」で始まります${two(x)}。`, key: `${[...pre(x)].length >= 2 ? `はじめの2文字は「${[...pre(x)].slice(0, 2).join("")}」` : `はじめは「${pre(x)}」、終わりは「${suf(x)}」`}です。下の4つから選んでもかまいません。`, why: whyOf(x),
+    make: (R, lv) => { const qi = ri(R, 0, QR.length - 1), s2 = s2yu(R, x, lv), c = cands(R, x, (y) => y.yomi[0]); return { type: "in", ask: "kana", q: QR[qi](x), big: x.k, ans: x.yomi[0], s2, cands: c, v: `${qi}:${s2.v}` }; } });
   // y：由来 → 名前を書く（むずかしい）。2段目は旧暦の何月か
   const Y = (x) => ({ id: `y${x.m}`, lv: 2, m: x.m, ans: x.k, name: `由来から：${x.k}`, look: `旧暦の${x.m}月の名前です。`, key: `1文字目は「${[...x.k][0]}」です。下の4つから選んでもかまいません。`, why: whyOf(x),
-    make: (R) => { const yi = ri(R, 0, x.ys.length - 1), qi = ri(R, 0, QY.length - 1), s2 = s2mo(R, x), c = cands(R, x, (y) => y.k); return { type: "in", ask: "kanji", q: QY[qi](x.ys[yi]), big: "？", opts: [], ans: x.k, s2, cands: c, v: `${yi}.${qi}:${s2.v}` }; } });
+    make: (R) => { const yi = ri(R, 0, x.ys.length - 1), qi = ri(R, 0, QY.length - 1), s2 = s2mo(R, x), c = cands(R, x, (y) => y.k); return { type: "in", ask: "kanji", q: QY[qi](x.ys[yi]), big: "？", ans: x.k, s2, cands: c, v: `${yi}.${qi}:${s2.v}` }; } });
 
   const KINDS = [...MONTHS.map(M), ...MONTHS.map(N), ...MONTHS.map(Rd), ...MONTHS.map(Y)];
   const BY = Object.fromEntries(KINDS.map((k) => [k.id, k]));
@@ -83,6 +89,8 @@
   const monthOf = (id) => MONTHS[(BY[id] ? BY[id].m : 1) - 1];
 
   // 書いた答えを見る。ok：正解・kana：かなだけで名前を書いた（正解に数える）・alt：別の書き方・other：ほかの月の名前（何月か）・kanji：読みの問題に漢字を書いた（まちがいに数えない）
+  // まちがいとして覚える印（同じ月の名前と読みは1つに数える。引き継ぎコードが受けない字 <>"'` は除き、20字まで。tsuki-imei #1 の CodeRabbit）
+  function wkey(P, v) { const r = judge(P, v); return r.ok || r.kanji || !r.s ? "" : r.other ? `月${r.other}` : r.s.replace(/[<>"'`]/g, "").slice(0, 20) || "?"; }
   function judge(P, v) {
     const x = MONTHS[P.m - 1], s = norm(v), out = { ok: false, kana: false, alt: false, other: 0, kanji: false, s };
     if (!s) return out;
@@ -102,6 +110,7 @@
   function seedOf(str) { let h = 2166136261; for (const ch of String(str)) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
   function rng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 
+  // 書いて答える問題は選び肢（opts）を持たない（候補 cands はヒントの最後の段だけ）。月を選ぶ問題だけ opts に12の月
   // 1問を作る。tag は「種類|種」（例 "n4|2026-11-21:d2"）。同じ tag ならいつも同じ問題
   function make(tag) {
     const [kind] = String(tag).split("|"), k = BY[kind];
@@ -120,6 +129,6 @@
     return h.map((id, i) => `${id}|${date}:h${i}`);
   }
 
-  const TMEI = { KINDS, BY, MONTHS, LV, SRC, MEDIA, kindsOf, monthOf, seedOf, rng, make, keyOf, judge, norm, dailyTags, hardTags, pickN };
+  const TMEI = { KINDS, BY, MONTHS, LV, SRC, MEDIA, kindsOf, monthOf, seedOf, rng, make, keyOf, judge, wkey, norm, dailyTags, hardTags, pickN };
   if (typeof module !== "undefined" && module.exports) module.exports = TMEI; else root.TMEI = TMEI;
 })(typeof self !== "undefined" ? self : this);
