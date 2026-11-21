@@ -97,7 +97,7 @@
     if (P.ask === "kana") {
       if (x.yomi.includes(s)) out.ok = true;
       else if ([x.k, ...x.alt].includes(s)) out.kanji = true;
-      else { const o = MONTHS.find((y) => y.yomi.includes(s)); if (o) out.other = o.m; }
+      else { const o = MONTHS.find((y) => y.k === s || y.alt.includes(s) || y.yomi.includes(s)); if (o) out.other = o.m; }
       return out;
     }
     if (s === x.k) out.ok = true;
