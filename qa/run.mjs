@@ -16,7 +16,7 @@ import { checkDepth } from "./depth-check.mjs";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const results = [];
 const check = (name, ok, detail = "") => results.push({ name, ok: !!ok, detail: String(detail).slice(0, 400) });
-const firstClose = async (q) => { if (await q.locator("#howto[open]").count()) await q.click("#howto-ok"); if (await q.locator("#core-coach").count()) { await q.evaluate(() => Core.coach.leave()); await q.waitForTimeout(100); } }; // はじめての練習の吹き出しをやめてホームへ（sync-template の migrateFirstQa が足した）
+const firstClose = async (q) => { if (await q.locator("#howto[open]").count()) await q.click("#howto-ok"); if (await q.evaluate(() => !!(window.Core && Core.coach && Core.coach.active()))) { await q.evaluate(() => { Core.coach.leave(); scrollTo(0, 0); }); await q.waitForTimeout(100); } }; // はじめての練習の吹き出しをやめてホームへ（sync-template の migrateFirstQa が足した）
 const G = createRequire(import.meta.url)(path.join(root, "data.js"));
 
 const PINS = "m6:3:10.8,m1:1:10.5,r11:2:5.1.3,n10:3:7.2.0,y1:0.1:2月.10月.9月,y7:1.2:5月.12月.10月,y6:1.2:1月.12月.8月,y4:1.2:12月.7月.9月;m7:2:4.9,m2:0:8.3,r3:0:8.0.4,n3:1:3.11.6,y11:1.1:10月.5月.1月,y1:1.2:11月.12月.6月,y8:0.0:11月.2月.6月,y7:0.0:2月.12月.3月;m10:0:1.2,m2:1:3.0,n11:2:8.3.2,r1:0:8.11.5,y10:1.1:11月.4月.3月,y4:1.2:12月.8月.5月,y3:0.1:10月.11月.12月,y1:1.1:7月.9月.4月"; // 過去の日の問題の印（変わったら過去の日の問題が変わった印。種類・言い方は足すだけでも変わる）
