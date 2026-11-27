@@ -127,6 +127,8 @@ const OUT_NAMES = /梅見月|花見月|建子月|初春月|小草生月|桜月|�
 
 // ---- 2. ファイルの中身 ----
 const html = readFileSync(path.join(root, "index.html"), "utf8"), gen = readFileSync(path.join(root, "data.js"), "utf8"), readme = readFileSync(path.join(root, "README.md"), "utf8");
+// ひな形の写し（<!-- 名前:begin〜end -->）はゲームの言葉ではないので外し、Core.kofi・Core.KOFI は写す前の形にもどして見る（shared-workflows の sync-template が足した）
+const gameOwn = (t) => t.replace(/<!-- ([a-z0-9-]+):begin[\s\S]*?<!-- \1:end -->/g, "").split("${Core.KOFI}").join("https://ko-fi.com/satouaaaaa").replace(/Core\.kofi\(("(?:[^"\\]|\\.)*"), ("(?:[^"\\]|\\.)*")\)/g, (m, a, b) => "`<p class=\"note kofi\">" + JSON.parse(a) + "、<a href=\"https://ko-fi.com/satouaaaaa\" target=\"_blank\" rel=\"noopener\">Ko-fi でコーヒー1杯の応援</a>をもらえると、" + JSON.parse(b) + "の励みになります（任意・遊ぶのはずっと無料）。</p>`");
 const ogSrc = readFileSync(path.join(root, "tools/make-og.cjs"), "utf8"), mfSrc = readFileSync(path.join(root, "manifest.webmanifest"), "utf8"), fbSrc = readFileSync(path.join(root, ".github/ISSUE_TEMPLATE/feedback.yml"), "utf8");
 const ext = [...html.matchAll(/(?:src|href)="(https?:[^"]+)"/g)].map((m) => m[1]).filter((u) => !/^https:\/\/fonts\.googleapis\.com(\/|$)|^https:\/\/ko-fi\.com\/satouaaaaa$/.test(u));
 check("外から読むのは文字（Google Fonts）だけ。スクリプト・広告・解析を入れない（出典のリンクは押したときに開くだけ）", ext.length === 0 && ![...html.matchAll(/<script[^>]+src="([^"]+)"/g)].some((m) => /^https?:/.test(m[1])), ext.join(","));
@@ -139,7 +141,7 @@ check("書いて答える：変換中の Enter で送らない（e.isComposing |
 { const howto = (html.match(/<dialog id="howto"[\s\S]*?<\/dialog>/) || [""])[0], ab = (html.match(/function about\(\)[\s\S]*?\n}/) || [""])[0], dis = (t) => /諸説/.test(t) && /よく言われる説/.test(t);
   check("言い方：遊び方・「このゲームについて」・README のどれにも、由来は諸説あり「よく言われる説」を出すことがある（1つに言い切らない）", dis(howto) && dis(ab) && dis(readme), `遊び方 ${dis(howto)}・について ${dis(ab)}・README ${dis(readme)}`);
   check("言い方：遊び方・「このゲームについて」・README に、いまの季節とは1～2か月ほどずれがあることがある", [howto, ab, readme].every((t) => /1～2か月ほど/.test(t)));
-  check("言い方：由来を「正しい由来」「本当の由来」と言い切らない", !/正しい由来|本当の由来|由来はこれ|唯一の/.test(html + gen + readme)); }
+  check("言い方：由来を「正しい由来」「本当の由来」と言い切らない", !/正しい由来|本当の由来|由来はこれ|唯一の/.test(gameOwn(html) + gen + readme)); }
 // 写し元の言葉（写し元ごとに登録する：突風よみ toppu-yomi、その前の津波よみ tsunami-yomi）。index.html の外の手書きの文（OGP の絵・manifest・感想フォーム）も見る
 { const body = html.replace(/<!-- a11y:begin[\s\S]*?a11y:end -->/, "").replace(/<!-- store:begin[\s\S]*?store:end -->/, "") + gen + readme + ogSrc + mfSrc + fbSrc;
   const left = body.match(/突風|竜巻|ダウンバースト|ガストフロント|JEF|藤田|気象庁|風速|toppu|tpy-|TPY|津波|tsunami|tny-|TNY|🌪/g);
@@ -147,7 +149,7 @@ check("書いて答える：変換中の Enter で送らない（e.isComposing |
 check("画面にお笑いの言葉を入れない（本物っぽく）", !/お笑い|ギャグ|ツッコミ|なんでやねん|（うそ）/.test(html + gen));
 check("引き継ぎ：transfer.js をゲームの script より前に、このゲームの記録のキー（記録・文字・復習）だけで読む・depth.js も前に読む", /<script src="transfer\.js" data-game="tsuki-imei" data-keys="tmei-v1,tmei-fs,tmei-depth"><\/script>\s*<script src="depth\.js" data-game="tsuki-imei" data-key="tmei-depth"><\/script>\s*<\/head>/.test(html) && html.indexOf('src="transfer.js"') < html.indexOf('src="data.js"') && /data-hk/.test(html) && existsSync(path.join(root, "transfer.js")));
 check("記録のキーは tmei-v1・tmei-fs・tmei-depth", /const KEY = "tmei-v1", FSKEY = "tmei-fs"/.test(html));
-check("好きなだけ遊べる：チケット・回数の上限・🔒で開くモードを入れない（game-dev.md F1・F2）", !/🎫|チケット|すると開く|🔒/.test(html) && !/\blife\b|ELIFE/.test(html));
+check("好きなだけ遊べる：チケット・回数の上限・🔒で開くモードを入れない（game-dev.md F1・F2）", !/🎫|チケット|すると開く|🔒/.test(gameOwn(html)) && !/\blife\b|ELIFE/.test(gameOwn(html)));
 // ゲームごとに手で書く所（incidents/2026-11-18-game-copy-hand-written-text.md・game-copy-manifest-feedback.md）
 { const desc = (html.match(/<meta name="description" content="([^"]+)"/) || [])[1] || "", howto = (html.match(/<dialog id="howto"[\s\S]*?<\/dialog>/) || [""])[0], lead = (html.match(/<p class="lead"[^>]*>([^<]*)/) || [])[1] || "";
   check("手で書く所：meta description が和風月名・由来・国立国会図書館の話", /和風月名/.test(desc) && /由来/.test(desc) && /国立国会図書館/.test(desc), desc);
